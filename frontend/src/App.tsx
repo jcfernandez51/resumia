@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import { Show, SignInButton, UserButton, useAuth } from "@clerk/react";
 
 type ApiResponse = {
   summary?: string;
@@ -9,6 +10,7 @@ const MINIMUM_TEXT_LENGTH = 20;
 const MAXIMUM_TEXT_LENGTH = 12_000;
 
 function App() {
+  const { getToken, isSignedIn } = useAuth();
   const [text, setText] = useState("");
   const [summary, setSummary] = useState("");
   const [error, setError] = useState("");
@@ -24,13 +26,26 @@ function App() {
       return;
     }
 
+    if (!isSignedIn) {
+      setError("Debes iniciar sesión.");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
+      const token = await getToken();
+      if (!token) {
+        throw new Error("Tu sesión ha caducado. Inicia sesión de nuevo.");
+      }
+
       // La ruta relativa funciona en local y en el mismo proyecto Serverless de Vercel.
       const response = await fetch("/api/summarize", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ text }),
       });
 
@@ -65,8 +80,24 @@ function App() {
           <p className="mt-3 max-w-2xl text-lg text-slate-600">
             Pega un texto y obtén un resumen breve y claro.
           </p>
+          <div className="mt-4">
+            <Show when="signed-out">
+              <SignInButton mode="modal">
+                <button className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white">
+                  Iniciar sesión
+                </button>
+              </SignInButton>
+            </Show>
+            <Show when="signed-in">
+              <UserButton />
+            </Show>
+          </div>
         </header>
 
+        <Show when="signed-out">
+          <p>Inicia sesión para generar un resumen.</p>
+        </Show>
+        <Show when="signed-in">
         <form onSubmit={handleSubmit} className="rounded-2xl bg-white p-5 shadow-sm sm:p-7">
           <label htmlFor="text" className="mb-2 block font-semibold">
             Texto para resumir
@@ -96,6 +127,7 @@ function App() {
             </button>
           </div>
         </form>
+        </Show>
 
         {error && (
           <div role="alert" className="mt-6 rounded-xl bg-red-50 p-4 text-red-700">
@@ -103,12 +135,14 @@ function App() {
           </div>
         )}
 
-        {summary && (
-          <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm sm:p-7" aria-live="polite">
-            <h2 className="mb-3 text-xl font-bold">Resumen</h2>
-            <p className="whitespace-pre-wrap leading-7 text-slate-700">{summary}</p>
-          </section>
-        )}
+        <Show when="signed-in">
+          {summary && (
+            <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm sm:p-7" aria-live="polite">
+              <h2 className="mb-3 text-xl font-bold">Resumen</h2>
+              <p className="whitespace-pre-wrap leading-7 text-slate-700">{summary}</p>
+            </section>
+          )}
+        </Show>
       </div>
     </main>
   );

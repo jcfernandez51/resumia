@@ -1,8 +1,9 @@
 import os
 
 import httpx
+from clerk_backend_api import AuthenticateRequestOptions, authenticate_request
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 
@@ -12,6 +13,31 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 load_dotenv()
 
 app = FastAPI(title="Resumia API", version="0.1.0")
+
+
+def require_auth(request: Request) -> None:
+    # Se exige el token incluso si alguien llama al backend sin usar la web.
+    authorization = request.headers.get("Authorization", "")
+    if not authorization.startswith("Bearer ") or not authorization[7:].strip():
+        raise HTTPException(status_code=401, detail="Debes iniciar sesión")
+
+    secret_key = os.getenv("CLERK_SECRET_KEY")
+    origins = os.getenv("CLERK_AUTHORIZED_PARTIES", "")
+    allowed_origins = [origin.strip() for origin in origins.split(",") if origin.strip()]
+    if not secret_key or not allowed_origins:
+        raise HTTPException(status_code=503, detail="La autenticación no está configurada")
+
+    state = authenticate_request(
+        request,
+        AuthenticateRequestOptions(
+            secret_key=secret_key,
+            jwt_key=os.getenv("CLERK_JWT_KEY"),
+            authorized_parties=allowed_origins,
+            accepts_token=["session_token"],
+        ),
+    )
+    if not state.is_signed_in:
+        raise HTTPException(status_code=401, detail="Sesión no válida o caducada")
 
 
 class SummarizeRequest(BaseModel):
@@ -27,7 +53,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/api/summarize", response_model=SummarizeResponse)
+@app.post("/api/summarize", response_model=SummarizeResponse, dependencies=[Depends(require_auth)])
 async def summarize(payload: SummarizeRequest) -> SummarizeResponse:
     api_key = os.getenv("GROQ_API_KEY")
     model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
