@@ -1,0 +1,12 @@
+.git
+.vercel
+.env*
+**/.env*
+**/.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache
+**/*.pem
+scripts
+evidencias
